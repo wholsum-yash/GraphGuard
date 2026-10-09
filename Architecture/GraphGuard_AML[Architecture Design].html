@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GraphGuard AML Architecture</title>
+    <!-- Loads vis.js for the interactive network diagram -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; display: flex; height: 100vh; background-color: #f8f9fa; }
+        #network-container { flex: 2; height: 100%; border-right: 2px solid #dee2e6; background: white; }
+        #side-panel { flex: 1; padding: 25px; background-color: #ffffff; overflow-y: auto; box-shadow: -2px 0 5px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #343a40; }
+        .badge { display: inline-block; padding: 5px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.2); }
+        .section-title { font-weight: bold; margin-top: 20px; margin-bottom: 5px; color: #495057; font-size: 14px; text-transform: uppercase; }
+        ul { padding-left: 20px; margin-top: 5px; color: #212529; }
+        .hidden { display: none; }
+        .empty-state { color: #6c757d; font-style: italic; margin-top: 50px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div id="network-container"></div>
+
+<div id="side-panel">
+    <div id="empty-state" class="empty-state">Click any module in the diagram to inspect its architecture.</div>
+    <div id="content" class="hidden">
+        <h2 id="mod-title">Module Title</h2>
+        <span id="mod-owner" class="badge">Owner</span>
+
+        <div class="section-title">System Boundary</div>
+        <div id="mod-boundary"></div>
+
+        <div class="section-title">Inputs</div>
+        <div id="mod-inputs"></div>
+
+        <div class="section-title">Under the Hood (Tasks)</div>
+        <ul id="mod-tasks"></ul>
+
+        <div class="section-title">Deliverable Outputs</div>
+        <div id="mod-outputs"></div>
+    </div>
+</div>
+
+<script>
+    // Universal orange highlight for when a module is selected
+    const selectHighlight = { background: '#FFE0B2', border: '#F57C00' };
+
+    // Professional Color Palette (Black swapped to Green) with custom highlight injected
+    const colors = {
+        yellow: { background: '#FFF9C4', border: '#FBC02D', highlight: selectHighlight },
+        green:  { background: '#C8E6C9', border: '#388E3C', highlight: selectHighlight },
+        blue:   { background: '#BBDEFB', border: '#1976D2', highlight: selectHighlight },
+        red:    { background: '#FFCDD2', border: '#D32F2F', highlight: selectHighlight },
+        pink:   { background: '#F8BBD0', border: '#C2185B', highlight: selectHighlight }
+    };
+
+    // Node Definitions
+    const nodes = new vis.DataSet([
+        { id: 1, label: 'M01: Data Ingestion', color: colors.yellow, shape: 'box', level: 0,
+          data: { owner: 'Data Engineer', boundary: 'Entry point for external data.', inputs: 'Raw CSV/Parquet from AMLSim', tasks: ['Standardize columns', 'Parse timestamps', 'Enforce numerical types'], outputs: 'transactions.parquet' } },
+        { id: 2, label: 'M02: Validation & Cleaning', color: colors.yellow, shape: 'box', level: 1,
+          data: { owner: 'Data Engineer', boundary: 'Data sanitization barrier.', inputs: 'transactions.parquet', tasks: ['Filter invalid timestamps', 'Deduplicate records', 'Statistical outlier checks'], outputs: 'clean_transactions.parquet' } },
+        { id: 6, label: 'M06: Typology Mapper', color: colors.yellow, shape: 'box', level: 2,
+          data: { owner: 'Data Engineer', boundary: 'Verification bridge for synthetic labels.', inputs: 'AMLSim alertPatterns.csv', tasks: ['Parse synthetic typologies', 'Map ground-truth alert tags'], outputs: 'account_labels.csv' } },
+        { id: 3, label: 'M03: Graph Construction', color: colors.green, shape: 'box', level: 2,
+          data: { owner: 'Graph / Backend Engineer', boundary: 'Converts tabular data to relational graph.', inputs: 'clean_transactions.parquet', tasks: ['Build adjacency matrices', 'Attach edge features', 'Package for PyTorch Geometric'], outputs: 'PyG Data object' } },
+        { id: 4, label: 'M04: Temporal Window', color: colors.green, shape: 'box', level: 3,
+          data: { owner: 'Graph / Backend Engineer', boundary: 'Dynamic time-decay relational slicing.', inputs: 'Graph edges chronologically', tasks: ['Establish rolling windows (1d, 7d, 30d)', 'Aggregate volume metrics', 'Calculate burstiness'], outputs: 'Temporal node matrices' } },
+        { id: 5, label: 'M05: Feature Engineering', color: colors.red, shape: 'box', level: 4,
+          data: { owner: 'ML + XAI Lead', boundary: 'Synthesizes tabular features from graph data.', inputs: 'Temporal aggregations & graph nodes', tasks: ['Activity & Flow metrics', 'Network topology (PageRank)', 'Counterparty entropy'], outputs: 'account_features.parquet' } },
+        { id: 10, label: 'M10: GraphSAGE Model', color: colors.blue, shape: 'box', level: 5,
+          data: { owner: 'Graph ML Lead', boundary: 'Inductive GNN modeling multi-hop dependencies.', inputs: 'PyG Data object', tasks: ['2-layer SAGEConv message passing', 'Weighted BCE loss training', 'Neighborhood batch sampling'], outputs: 'risk_probability_gnn' } },
+        { id: 7, label: 'M07: Baseline Rule Engine', color: colors.red, shape: 'box', level: 5,
+          data: { owner: 'ML + XAI Lead', boundary: 'Hardcoded heuristic benchmark.', inputs: 'account_features.parquet', tasks: ['Execute rapid turnover rules', 'Flag fan-out alerts', 'Generate human reason strings'], outputs: 'rule_score' } },
+        { id: 8, label: 'M08: XGBoost Baseline', color: colors.red, shape: 'box', level: 5,
+          data: { owner: 'ML + XAI Lead', boundary: 'Tabular supervised ML benchmark.', inputs: 'account_features.parquet', tasks: ['Train gradient-boosted trees', 'Apply scale_pos_weight', 'Tune PR-AUC thresholds'], outputs: 'risk_probability_xgb' } },
+        { id: 9, label: 'M09: SHAP Engine', color: colors.red, shape: 'box', level: 6,
+          data: { owner: 'ML + XAI Lead', boundary: 'Feature attribution explainer.', inputs: 'Trained XGBoost model', tasks: ['Compute Shapley values', 'Rank top contributing features', 'Generate sentence templates'], outputs: 'shap_explanation.json' } },
+        { id: 11, label: 'M11: GNNExplainer', color: colors.red, shape: 'box', level: 6,
+          data: { owner: 'ML + XAI Lead', boundary: 'Structural GNN explainer.', inputs: 'Trained GraphSAGE model', tasks: ['Optimize edge/node masks', 'Threshold importance scores', 'Extract k-hop subgraphs'], outputs: 'Explanatory subgraph' } },
+        { id: 12, label: 'M12: Pattern Extractor', color: colors.green, shape: 'box', level: 7,
+          data: { owner: 'Graph / Backend Engineer', boundary: 'Identifies typologies in subgraphs.', inputs: 'Explanatory subgraph', tasks: ['Execute cycle detection', 'Detect fan-in/fan-out flows'], outputs: 'Typology classification tag' } },
+        { id: 13, label: 'M13: Risk Aggregator', color: colors.red, shape: 'box', level: 7,
+          data: { owner: 'ML + XAI Lead', boundary: 'Score reconciliation engine.', inputs: 'ML probabilities & rule scores', tasks: ['Reconcile scores across models', 'Map alerts to priority tiers'], outputs: 'final_risk_tier' } },
+        { id: 14, label: 'M14: Case Builder', color: colors.green, shape: 'box', level: 8,
+          data: { owner: 'Graph / Backend Engineer', boundary: 'JSON serializer for the UI.', inputs: 'Aggregated risk & explanations', tasks: ['Package account metadata', 'Embed SHAP and subgraphs', 'Compile transaction sequence'], outputs: 'case_CASE-XXXXX.json' } },
+        { id: 15, label: 'M15: Investigator UI', color: colors.pink, shape: 'box', level: 9,
+          data: { owner: 'Frontend / QA / Integration', boundary: 'Human-in-the-loop dashboard.', inputs: 'case_CASE-XXXXX.json', tasks: ['Render Alert Queue', 'Render interactive network view', 'Capture analyst feedback'], outputs: 'Streamlit Web UI' } }
+    ]);
+
+    // Edge Definitions
+    const edges = new vis.DataSet([
+        { from: 1, to: 2, arrows: 'to' },
+        { from: 2, to: 6, arrows: 'to' },
+        { from: 2, to: 3, arrows: 'to' },
+        { from: 3, to: 4, arrows: 'to' },
+        { from: 3, to: 10, arrows: 'to' },
+        { from: 4, to: 5, arrows: 'to' },
+        { from: 5, to: 7, arrows: 'to' },
+        { from: 5, to: 8, arrows: 'to' },
+        { from: 8, to: 9, arrows: 'to' },
+        { from: 10, to: 11, arrows: 'to' },
+        { from: 11, to: 12, arrows: 'to' },
+        { from: 7, to: 13, arrows: 'to' },
+        { from: 8, to: 13, arrows: 'to' },
+        { from: 10, to: 13, arrows: 'to' },
+        { from: 9, to: 14, arrows: 'to' },
+        { from: 12, to: 14, arrows: 'to' },
+        { from: 13, to: 14, arrows: 'to' },
+        { from: 14, to: 15, arrows: 'to' }
+    ]);
+
+    // Network Configuration - Reverted back to the original layout spacing
+    const container = document.getElementById('network-container');
+    const data = { nodes: nodes, edges: edges };
+    const options = {
+        layout: { hierarchical: { direction: 'LR', levelSeparation: 250, nodeSpacing: 100 } },
+        physics: false,
+        nodes: { font: { size: 16, face: 'Helvetica' }, borderWidth: 2, padding: 10, shadow: true },
+        edges: { color: '#6c757d', smooth: { type: 'cubicBezier' } }
+    };
+
+    const network = new vis.Network(container, data, options);
+
+    // Interaction Logic for the Side Panel
+    network.on("click", function (params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const nodeData = nodes.get(nodeId).data;
+            const nodeColor = nodes.get(nodeId).color.background;
+
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+
+            document.getElementById('mod-title').innerText = nodes.get(nodeId).label;
+
+            const ownerBadge = document.getElementById('mod-owner');
+            ownerBadge.innerText = nodeData.owner;
+            ownerBadge.style.backgroundColor = nodeColor;
+
+            document.getElementById('mod-boundary').innerText = nodeData.boundary;
+            document.getElementById('mod-inputs').innerText = nodeData.inputs;
+            document.getElementById('mod-outputs').innerText = nodeData.outputs;
+
+            const ul = document.getElementById('mod-tasks');
+            ul.innerHTML = '';
+            nodeData.tasks.forEach(task => {
+                let li = document.createElement('li');
+                li.innerText = task;
+                ul.appendChild(li);
+            });
+        }
+    });
+</script>
+</body>
+</html>
